@@ -1,0 +1,89 @@
+sim=remApi('remoteApi');
+sim.simxFinish(-1);
+clientID = sim.simxStart('127.0.0.1', 19999, true, true, 5000, 5);
+if (clientID > -1)
+    disp('Connected to remote Api server');
+    [~, robot] = sim.simxGetObjectHandle(clientID,'robot',sim.simx_opmode_blocking);
+    [~, left_motor] = sim.simxGetObjectHandle(clientID, 'motor_left', sim.simx_opmode_blocking);
+    [~, right_motor] = sim.simxGetObjectHandle(clientID, 'motor_right', sim.simx_opmode_blocking);
+    [~, robot_pose] = sim.simxGetObjectHandle(clientID, 'Robotpose', sim.simx_opmode_blocking);
+    [~, gyro_data] = sim.simxGetObjectHandle(clientID,'GyroSensor',sim.simx_opmode_blocking);
+    [~, gps_data] = sim.simxGetObjectHandle(clientID,'GPS',sim.simx_opmode_blocking);
+
+    [~, robot_orientation] = sim.simxGetObjectOrientation(clientID, gyro_data, -1, sim.simx_opmode_streaming);
+    [~, robot_position] = sim.simxGetObjectOrientation(clientID, gps_data, -1, sim.simx_opmode_streaming);
+    while true 
+        %target
+         goal = [1, 1];
+         isReached = movetogoal(clientID, sim, left_motor, right_motor, gps_data,gyro_data, goal);
+
+         goal = [1.5, 0.5];
+         isReached = movetogoal(clientID, sim, left_motor, right_motor, gps_data,gyro_data, goal);
+         if isReached
+             disp('Reached the goal!');
+             break;
+         end
+    end
+
+else 
+    disp('Can not connect to Api server');
+end
+
+function [isReached] = movetogoal(clientID, sim, left_motor, right_motor, gps_data, gyro_data, goal);
+    offset = 0.05;
+    a_m2g = 70;
+    Kp = 3000;
+    R = 0.03;
+    L = 0.1665;
+    MAXSPEED = 5;
+
+    [~,robot_pos] = sim.simxGetObjectPosition(clientID, gps_data, -1, sim.simx_opmode_buffer);
+    robot_current_pos = [robot_pos(1), robot_pos(2)];
+
+     % Hiển thị tọa độ của robot
+     disp(['Current position: ', num2str(robot_current_pos)]);
+
+    [~,robot_orien] = sim.simxGetObjectOrientation(clientID, gyro_data, -1, sim.simx_opmode_buffer);
+    V_m2g = goal - robot_current_pos;
+    dist2goal = sqrt(V_m2g(1)^2 + V_m2g(2)^2);
+    if norm(V_m2g) == 0
+       V_m2g = a_m2g * (V_m2g/norm(V_m2g));
+    end
+
+    isReached = (dist2goal < offset);
+
+    desiredOrientaion = atan2(V_m2g(2), V_m2g(1));
+    errorAngle = desiredOrientaion - robot_orien(3);
+    if abs(errorAngle) > pi
+        if errorAngle < 0
+            errorAngle = errorAngle + 2 * pi;
+        else
+            errorAngle = errorAngle - 2 * pi;
+        end
+    end
+
+    omega = Kp * (errorAngle);
+    v = norm(V_m2g);
+    vr = (2 * v + omega * L) / 2 * R;
+    vl = (2 * v - omega * L) / 2 * R;
+
+    if vr > MAXSPEED
+        vr = MAXSPEED;
+    elseif vr < -MAXSPEED
+        vr = -MAXSPEED;
+    end
+
+    if vl > MAXSPEED
+        vl = MAXSPEED;
+    elseif vl < -MAXSPEED
+        vl = -MAXSPEED;
+    end
+
+    if isReached == false
+        sim.simxSetJointTargetVelocity(clientID, left_motor, vl, sim.simx_opmode_oneshot);
+        sim.simxSetJointTargetVelocity(clientID, right_motor, vr, sim.simx_opmode_oneshot);
+    else 
+        sim.simxSetJointTargetVelocity(clientID, left_motor, 0, sim.simx_opmode_oneshot);
+        sim.simxSetJointTargetVelocity(clientID, right_motor, 0, sim.simx_opmode_oneshot);
+    end
+end
