@@ -1,2 +1,2 @@
 # Robotics-Lab
-Use Matlab controller Robot in CoppeliaSim
+Use Matlab control Robot in CoppeliaSim
